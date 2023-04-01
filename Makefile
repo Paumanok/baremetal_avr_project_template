@@ -12,6 +12,10 @@ MCU = atmega32u4
 ARCH = AVR8
 F_CPU = 16000000UL
 F_USB = $(F_CPU)
+USB_PID = 8036
+USB_VID = 2341
+
+CDEFS =  -DUSB_PID=$(USB_PID) -DUSB_VID=$(USB_VID) -DF_CPU=$(F_CPU) #these are leonardo/m32u4 specific
 
 AVRDUDE_MCU = m32u4
 AVRDUDE_PORT = /dev/ttyACM0
@@ -22,32 +26,21 @@ AVRDUDE_FLAGS = -p $(AVRDUDE_MCU)
 AVRDUDE_FLAGS += -P $(AVRDUDE_PORT)
 AVRDUDE_FLAGS += -c $(AVRDUDE_PROGRAMMER)
 
-
+ARDDIR = /home/matt/.arduino15/packages/arduino/hardware/avr/1.8.6/
 
 LFUSE = 0x9f
 HFUSE = 0xd1
 
 TARGET = main
 
-# Optional assembler flags.
-#  -Wa,...:   tell GCC to pass this to the assembler.
-#  -ahlms:    create listing
-#  -gstabs:   have the assembler create line number information; note that
-#             for use in COFF files, additional information about filenames
-#             and function names needs to be present in the assembler source
-#             files -- see avr-libc docs [FIXME: not yet described there]
 ASFLAGS = -Wa,-adhlns=$(<:.S=.lst),-gstabs 
 
-
-# Optional linker flags.
-#  -Wl,...:   tell GCC to pass this to linker.
-#  -Map:      create map file
-#  --cref:    add cross reference to  map file
 LDFLAGS += -Wl,-Map=$(TARGET).map,--cref
 
-ARDDIR = /home/matt/.arduino15/packages/arduino/hardware/avr/1.8.6/
 
 ### These macros pertain to supporting Arduino libs
+### Thank you to entrity for a lot of this. His didn't quite work for me
+### https://gist.github.com/entrity/5424505
 ifndef NO_ARDUINO
 	LDFLAGS += -lm # -lm = math library
 	ARDLIBDIR 		= $(ARDDIR)libraries
@@ -62,15 +55,16 @@ ifndef NO_ARDUINO
 	EXTRAINCDIRS += $(foreach lib,$(ARDLIBS),$(ARDLIBDIR)/$(lib))
 endif
 
+
+#List your actual source files here, we're not wildcarding for our code
 PSRC += main.cpp 
 # Define all object files.
 OBJ =  $(ASRC:.S=.S.o) $(SRC:.c=.o) $(PSRC:.cpp=.o)
 # Define all listing files.
 LST = $(ASRC:.S=.lst) $(SRC:.c=.lst) $(PSRC:.cpp=.lst) 
 
-CDEFS =  -DUSB_PID=8036 -DUSB_VID=2341 -DF_CPU=$(F_CPU)
+
 OPTLEVEL = s
-CFLAGS = -DF_CPU=$(F_CPU)UL
 CFLAGS = -DF_USB=$(F_CPU)
 CFLAGS += $(CDEFS)
 CFLAGS += -O$(OPTLEVEL)
@@ -78,27 +72,23 @@ CFLAGS += -mmcu=$(MCU)
 CFLAGS += -I$(ARDDIR)variants/leonardo
 CFLAGS += -I$(ARDCOREDIR)
 CFLAGS += -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums
-CFLAGS += -ffunction-sections -fdata-sections -fcommon -flto
+CFLAGS += -ffunction-sections -fdata-sections -fcommon -flto #flto allows for much smaller linked object size
 #CFLAGS += -v
 CFLAGS += -Wall 
-
-#CXXFLAGS = $(CFLAGS)
-
 
 
 # Combine all necessary flags and optional flags.
 # Add target processor to flags.
-#ALL_CFLAGS 		= -mmcu=$(MCU) -I. $(CFLAGS) -Wa,-adhlns=$(<:.c=.lst)
 ALL_CFLAGS 		= -I. $(CFLAGS) -Wa,-adhlns=$(<:.c=.lst)
 ALL_CXXFLAGS 	=  -I. $(CFLAGS) -fno-threadsafe-statics -Wa,-adhlns=$(<:.cpp=.lst)
 ALL_ASFLAGS 	= -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS) 
 
+#call me unprofessional all you want, some debug messages stay. 
 MSG_LINKING = "ah shit linking"
 
 # Default target: make program!
 all: gccversion sizebefore\
-	$(TARGET).elf $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).sym sizeafter
-
+	$(TARGET).elf $(TARGET).hex $(TARGET).eep $(TARGET).lss $(TARGET).sym sizeafter cleanup
 
 
 gccversion:
@@ -112,8 +102,6 @@ sizebefore:
 
 sizeafter:
 	@if [ -f $(TARGET).elf ]; then echo;  $(ELFSIZE); echo; fi
-
-
 
 
 # Create final output files (.hex, .eep) from ELF output file.
@@ -185,10 +173,10 @@ isp: $(TARGET).hex
 	$(AVRDUDE) $(AVRDUDE_FLAGS) -U flash:w:$(TARGET).hex
 
 
-clean :
-	@echo
-	@echo $(MSG_CLEANING)
-	$(REMOVE) $(TARGET).hex
+
+#leave the final hex file around for flashing other devices
+cleanup:
+	@echo Cleaning up but leaving final hex file
 	$(REMOVE) $(TARGET).eep
 	$(REMOVE) $(TARGET).obj
 	$(REMOVE) $(TARGET).cof
@@ -207,3 +195,11 @@ clean :
 	$(REMOVE) $(PSRC:.cpp=.s)
 	$(REMOVE) $(PSRC:.cpp=.d)
 	$(REMOVE) *~
+
+#full clean
+clean : cleanup
+	@echo
+	@echo $(MSG_CLEANING)
+	$(REMOVE) $(TARGET).hex
+
+
